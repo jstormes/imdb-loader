@@ -1,0 +1,77 @@
+# IMDb Local Database
+#
+# A local MariaDB database containing IMDb's non-commercial datasets
+# for title lookups and media identification.
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose logs -f loader # Monitor loading progress
+#   docker compose down           # Stop all services
+#
+# First run will take ~25 minutes to load 202M records.
+
+services:
+  # MariaDB Database
+  mariadb:
+    image: mariadb:11
+    container_name: imdb-mariadb
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-imdb_root_pass}
+      - MYSQL_DATABASE=imdb
+      - MYSQL_USER=imdb
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-imdb_pass}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    command:
+      - --local-infile=1
+      - --innodb-buffer-pool-size=1G
+      - --innodb-log-file-size=256M
+      - --max-allowed-packet=256M
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Data Loader - Downloads and imports IMDb datasets
+  loader:
+    image: jstormes/imdb-loader
+    container_name: imdb-loader
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      - MYSQL_HOST=mariadb
+      - MYSQL_PORT=3306
+      - MYSQL_USER=imdb
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-imdb_pass}
+      - DATA_DIR=/data
+      - MAX_AGE_DAYS=${MAX_AGE_DAYS:-15}
+      - REFRESH_CHECK_INTERVAL=${REFRESH_CHECK_INTERVAL:-86400}
+      - INITIAL_LOAD_DELAY=10
+    volumes:
+      - loader_data:/data
+
+  # PHPMyAdmin - Web-based database management
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: imdb-phpmyadmin
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      - PMA_HOST=mariadb
+      - PMA_PORT=3306
+      - PMA_USER=imdb
+      - PMA_PASSWORD=${MYSQL_PASSWORD:-imdb_pass}
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+
+volumes:
+  mariadb_data:
+  loader_data:

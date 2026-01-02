@@ -1,0 +1,22 @@
+# Environment files
+.env
+
+# Data directories (large files, don't commit)
+data/
+downloads/
+mysql/
+
+# IMDb data files (large, downloaded at runtime)
+*.tsv.gz
+*.tsv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
