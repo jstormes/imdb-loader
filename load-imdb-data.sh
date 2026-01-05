@@ -2,11 +2,7 @@
 #
 # Load IMDb datasets into MariaDB
 #
-# Downloads data from IMDb when:
-#   - First run: files missing AND database tables empty (auto-detects initial setup)
-#   - Refresh: existing files are over MAX_AGE_DAYS old
-#   - Manual: --force flag is passed
-#
+# Downloads data from IMDb ONLY if local files are missing or over 15 days old.
 # Loads into database if tables are empty or data was refreshed.
 #
 # Usage: ./load-imdb-data.sh [--force]
@@ -85,76 +81,47 @@ file_is_valid() {
     return 0
 }
 
-# Check if download is needed:
-# - Force flag is set
-# - Files are missing/corrupted AND database tables are empty (initial setup)
-# - Files exist AND are stale (refresh)
+# Check if download is needed - if files are missing, corrupted, or > MAX_AGE_DAYS old
 check_download_needed() {
     if [ "$FORCE_UPDATE" = "--force" ]; then
         log "Force update requested"
         return 0
     fi
 
-    local stale_files=0
-    local missing_files=0
-    local valid_files=0
+    local need_download=0
 
     for file in "${!FILES_TO_TABLES[@]}"; do
         local filepath="$DATA_DIR/$file"
 
-        # Check if file exists
+        # If file doesn't exist, download needed
         if [ ! -f "$filepath" ]; then
-            log "File missing: $file"
-            missing_files=$((missing_files + 1))
+            log "File missing: $file - will download"
+            need_download=1
             continue
         fi
 
-        # Check if file is corrupted
+        # If file is corrupted, download needed
         if ! file_is_valid "$filepath"; then
-            log "File corrupted: $file"
-            missing_files=$((missing_files + 1))
+            log "File corrupted: $file - will download"
+            need_download=1
             continue
         fi
-
-        valid_files=$((valid_files + 1))
 
         # Check file age
         local file_age_days
         file_age_days=$(( ($(date +%s) - $(stat -c %Y "$filepath")) / 86400 ))
 
         if [ "$file_age_days" -ge "$MAX_AGE_DAYS" ]; then
-            log "File $file is $file_age_days days old (max: $MAX_AGE_DAYS) - refresh needed"
-            stale_files=$((stale_files + 1))
+            log "File $file is $file_age_days days old (max: $MAX_AGE_DAYS) - will download"
+            need_download=1
         else
             log "File $file is $file_age_days days old - OK"
         fi
     done
 
-    # If some files are stale, download all
-    if [ $stale_files -gt 0 ]; then
-        log "Some files are stale - download needed"
+    if [ $need_download -eq 1 ]; then
+        log "Download needed"
         return 0
-    fi
-
-    # If files are missing, check if this is initial setup (empty database)
-    if [ $missing_files -gt 0 ]; then
-        log "Checking if database is empty (initial setup detection)..."
-        local empty_tables=0
-        for table in "${FILES_TO_TABLES[@]}"; do
-            local count
-            count=$(mysql_cmd -N -e "SELECT COUNT(*) FROM imdb.$table" 2>/dev/null || echo "0")
-            if [ "$count" -eq 0 ]; then
-                empty_tables=$((empty_tables + 1))
-            fi
-        done
-
-        if [ $empty_tables -gt 0 ]; then
-            log "Database has empty tables and files are missing - initial setup detected"
-            return 0
-        else
-            log "Files missing but database has data - skipping download (use --force to re-download)"
-            return 1
-        fi
     fi
 
     log "All files are fresh (less than $MAX_AGE_DAYS days old) - no download needed"

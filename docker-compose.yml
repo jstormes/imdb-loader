@@ -22,7 +22,7 @@ services:
       - MYSQL_USER=imdb
       - MYSQL_PASSWORD=${MYSQL_PASSWORD:-imdb_pass}
     volumes:
-      - mariadb_data:/var/lib/mysql
+      - ./data/mysql:/var/lib/mysql
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     command:
@@ -38,7 +38,7 @@ services:
 
   # Data Loader - Downloads and imports IMDb datasets
   loader:
-    image: jstormes/imdb-loader
+    build: .
     container_name: imdb-loader
     restart: unless-stopped
     depends_on:
@@ -54,7 +54,7 @@ services:
       - REFRESH_CHECK_INTERVAL=${REFRESH_CHECK_INTERVAL:-86400}
       - INITIAL_LOAD_DELAY=10
     volumes:
-      - loader_data:/data
+      - ./data/downloads:/data
 
   # PHPMyAdmin - Web-based database management
   phpmyadmin:
@@ -71,7 +71,3 @@ services:
       - PMA_PASSWORD=${MYSQL_PASSWORD:-imdb_pass}
     ports:
       - "${PHPMYADMIN_PORT:-8080}:80"
-
-volumes:
-  mariadb_data:
-  loader_data:

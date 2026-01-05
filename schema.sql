@@ -2,6 +2,30 @@
 -- Source: https://developer.imdb.com/non-commercial-datasets/
 --
 -- Optimized for lookups by title, tconst (IMDb ID), and name
+--
+-- INDEX STRATEGY:
+-- ===============
+-- Key queries from imdb-lookup.sh:
+--
+-- 1. Title search: WHERE primaryTitle = 'X' or MATCH(primaryTitle) AGAINST('X')
+--    -> Uses: idx_primaryTitle, ft_primaryTitle (FULLTEXT)
+--
+-- 2. Type filter: WHERE titleType IN ('movie', 'tvSeries', ...)
+--    -> Uses: idx_titleType
+--
+-- 3. Character search: MATCH(characters) AGAINST('X')
+--    -> Uses: ft_characters (FULLTEXT) - Much faster than LIKE '%X%'
+--
+-- 4. Actor lookup: WHERE primaryName IN ('X', 'Y') + JOIN on nconst
+--    -> Uses: idx_primaryName, idx_nconst
+--
+-- 5. Episode lookup: WHERE parentTconst = 'X' ORDER BY season, episode
+--    -> Uses: idx_parentTconst, idx_season_episode
+--
+-- PERFORMANCE NOTES:
+-- - Always use FULLTEXT (MATCH AGAINST) instead of LIKE '%...%' for text search
+-- - LIKE with leading wildcard cannot use B-tree indexes, causing full scans
+-- - Character-only search: Use MATCH(characters) AGAINST() not IS NOT NULL
 
 CREATE DATABASE IF NOT EXISTS imdb;
 USE imdb;
@@ -68,7 +92,8 @@ CREATE TABLE IF NOT EXISTS title_principals (
     characters TEXT,
     PRIMARY KEY (tconst, ordering),
     INDEX idx_nconst (nconst),
-    INDEX idx_category (category)
+    INDEX idx_category (category),
+    FULLTEXT INDEX ft_characters (characters)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- title.ratings - User ratings
